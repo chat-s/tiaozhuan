@@ -61,6 +61,12 @@
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
         }
         
+        .app-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
         .xiaohongshu {
             background: linear-gradient(45deg, #ff2442, #ff6b6b);
         }
@@ -95,16 +101,32 @@
             color: #856404;
             font-size: 14px;
         }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #ff2442;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1 class="title">选择要打开的应用</h1>
         
-        <a href="javascript:void(0)" class="app-button xiaohongshu" onclick="openXiaohongshu()">
+        <button id="xiaohongshuBtn" class="app-button xiaohongshu" onclick="openXiaohongshu()">
             <span class="icon">🌹</span>
-            打开小红书
-        </a>
+            <span id="xiaohongshuText">打开小红书</span>
+        </button>
         
         <a href="javascript:void(0)" class="app-button douyin" onclick="openDouyin()">
             <span class="icon">🎵</span>
@@ -119,29 +141,146 @@
         <div id="errorMsg" class="error-msg"></div>
         
         <div class="tips">
-            <p>• 点击按钮将尝试打开对应的应用</p>
+            <p>• 点击小红书将先下载图片和复制文字，然后跳转</p>
             <p>• 如果应用未安装，将提示下载</p>
             <p>• 朋友圈功能将调用微信分享</p>
         </div>
     </div>
 
     <script>
-        function openXiaohongshu() {
-            // 尝试打开小红书APP
-            const xiaohongshuScheme = 'xhsdiscover://';
-            const xiaohongshuWeb = 'https://www.xiaohongshu.com/';
+        async function openXiaohongshu() {
+            const btn = document.getElementById('xiaohongshuBtn');
+            const textSpan = document.getElementById('xiaohongshuText');
             
-            // 创建隐藏的iframe尝试打开APP
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = xiaohongshuScheme;
-            document.body.appendChild(iframe);
+            // 禁用按钮，显示加载状态
+            btn.disabled = true;
+            textSpan.innerHTML = '<span class="loading"></span>准备资源中...';
             
-            // 如果APP未打开，则跳转到网页版
-            setTimeout(() => {
-                window.location.href = xiaohongshuWeb;
-                document.body.removeChild(iframe);
-            }, 2000);
+            try {
+                // 下载图片到本地
+                showError('正在下载图片...');
+                await downloadImages();
+                
+                // 写入文字到粘贴板
+                showError('正在复制文字到粘贴板...');
+                await copyTextToClipboard();
+                
+                showError('资源准备完成，正在跳转到小红书...');
+                
+                // 延迟1秒后跳转
+                setTimeout(() => {
+                    // 尝试打开小红书APP
+                    const xiaohongshuScheme = 'xhsdiscover://';
+                    const xiaohongshuWeb = 'https://www.xiaohongshu.com/';
+                    
+                    // 创建隐藏的iframe尝试打开APP
+                    const iframe = document.createElement('iframe');
+                    iframe.style.display = 'none';
+                    iframe.src = xiaohongshuScheme;
+                    document.body.appendChild(iframe);
+                    
+                    // 如果APP未打开，则跳转到网页版
+                    setTimeout(() => {
+                        window.location.href = xiaohongshuWeb;
+                        document.body.removeChild(iframe);
+                    }, 2000);
+                }, 1000);
+                
+            } catch (error) {
+                showError('准备资源时出错: ' + error.message);
+                console.error('Error:', error);
+            } finally {
+                // 恢复按钮状态
+                setTimeout(() => {
+                    btn.disabled = false;
+                    textSpan.innerHTML = '打开小红书';
+                }, 3000);
+            }
+        }
+        
+        // 下载图片函数
+        async function downloadImages() {
+            const imageUrls = [
+                'https://photo.459122.xyz/i/e2a171c074a2ed0e87454243dd92e738.png',
+                'https://photo.459122.xyz/i/4dda1a7094187b6b03f7606522057aa4.png'
+            ];
+            
+            for (let i = 0; i < imageUrls.length; i++) {
+                const url = imageUrls[i];
+                const filename = `xiaohongshu_image_${i + 1}.png`;
+                
+                try {
+                    showError(`正在下载图片 ${i + 1}/${imageUrls.length}...`);
+                    
+                    // 创建下载链接
+                    const response = await fetch(url);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    
+                    const blob = await response.blob();
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    
+                    // 创建下载元素
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = downloadUrl;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    
+                    // 清理
+                    window.URL.revokeObjectURL(downloadUrl);
+                    document.body.removeChild(a);
+                    
+                    // 短暂延迟避免浏览器阻止多个下载
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                    
+                } catch (error) {
+                    console.error(`下载图片${i + 1}出错:`, error);
+                    throw new Error(`下载图片${i + 1}失败: ${error.message}`);
+                }
+            }
+        }
+        
+        // 复制文字到粘贴板
+        async function copyTextToClipboard() {
+            const textToCopy = `🌟 精选内容分享 🌟
+
+✨ 发现好物，记录美好生活
+📸 分享精彩瞬间  
+💫 与你一起探索更多可能
+
+#生活分享 #好物推荐 #美好时光`;
+
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    // 现代浏览器使用 Clipboard API
+                    await navigator.clipboard.writeText(textToCopy);
+                } else {
+                    // 兼容老版本浏览器
+                    const textArea = document.createElement('textarea');
+                    textArea.value = textToCopy;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-999999px';
+                    textArea.style.top = '-999999px';
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    
+                    if (!successful) {
+                        throw new Error('execCommand复制失败');
+                    }
+                }
+                
+                console.log('文字已复制到粘贴板');
+            } catch (error) {
+                console.error('复制到粘贴板失败:', error);
+                throw new Error('复制文字到粘贴板失败: ' + error.message);
+            }
         }
         
         function openDouyin() {
@@ -212,4 +351,4 @@
         };
     </script>
 </body>
-</html>
+</html> 
